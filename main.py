@@ -2,57 +2,69 @@ import os
 import asyncio
 import requests
 from bs4 import BeautifulSoup
-import yt_dlp
 from telegram import Bot
+import yt_dlp
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # MUST be -100xxxxxxxxxx
 
-CHECK_INTERVAL = 600  # 10 min
-MAX_SIZE = 50 * 1024 * 1024  # 50MB
+# SAFE: no crash if missing
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN missing")
+
+if not CHANNEL_ID:
+    raise ValueError("❌ CHANNEL_ID missing (set in Railway env)")
+
+CHANNEL_ID = int(CHANNEL_ID)
+
+CAPTION = "Join Telegram @link69_viral"
 
 bot = Bot(token=BOT_TOKEN)
 
-# ================= MEMORY =================
-downloaded_links = set()
+# ================= SETTINGS =================
+URL = "https://www.thekamababa.com/"
+CHECK_INTERVAL = 600   # 10 min
+MAX_SIZE_MB = 49       # Telegram safe limit
+DOWNLOAD_TIMEOUT = 120
 
-# ================= SCRAPER =================
-def get_post_links():
-    url = "https://www.thekamababa.com/"
-    print(f"🌐 Fetching: {url}")
+downloaded = set()
 
-    try:
-        res = requests.get(url, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+# ================= FETCH POSTS =================
+def get_posts():
+    print("🌐 Fetching website...")
+    res = requests.get(URL, timeout=15)
+    soup = BeautifulSoup(res.text, "html.parser")
 
-        links = []
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
+    links = []
 
-            # ✅ Only valid post links
-            if "thekamababa.com" in href and href.count("/") > 3:
-                if "/category/" not in href and "/tag/" not in href:
-                    links.append(href)
+    for a in soup.find_all("a", href=True):
+        link = a["href"]
 
-        links = list(set(links))  # remove duplicates
-        print(f"🔗 POSTS: {links[:20]}")
+        if (
+            "/category/" not in link and
+            "/tag/" not in link and
+            "page/" not in link and
+            "?" not in link and
+            link.endswith("/")
+        ):
+            if "thekamababa.com" in link:
+                links.append(link)
 
-        return links
+    # remove duplicates
+    return list(set(links))
 
-    except Exception as e:
-        print(f"❌ Fetch error: {e}")
-        return []
 
 # ================= EXTRACT VIDEO =================
-def extract_video_url(post_url):
+def get_video_url(post_url):
     try:
-        print(f"🔍 Extracting video from: {post_url}")
-
-        res = requests.get(post_url, timeout=10)
+        print(f"🔍 Extracting: {post_url}")
+        res = requests.get(post_url, timeout=15)
         soup = BeautifulSoup(res.text, "html.parser")
 
         video = soup.find("video")
+
         if video:
             source = video.find("source")
             if source and source.get("src"):
@@ -61,99 +73,91 @@ def extract_video_url(post_url):
         return None
 
     except Exception as e:
-        print(f"❌ Extract error: {e}")
+        print("❌ Extract error:", e)
         return None
+
 
 # ================= DOWNLOAD =================
 def download_video(url):
-    ydl_opts = {
-        "outtmpl": "video.%(ext)s",
-        "quiet": True,
-        "format": "mp4/best",
-        "noplaylist": True,
-    }
-
     try:
+        print(f"⬇️ Downloading: {url}")
+
+        ydl_opts = {
+            "outtmpl": "video.mp4",
+            "quiet": True,
+            "noplaylist": True,
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            file = ydl.prepare_filename(info)
+            ydl.download([url])
 
-            if not os.path.exists(file):
-                return None
+        size = os.path.getsize("video.mp4") / (1024 * 1024)
 
-            size = os.path.getsize(file)
+        print(f"📦 Size: {size:.2f} MB")
 
-            # ❌ Skip large files
-            if size > MAX_SIZE:
-                print("❌ Skipped (too large)")
-                os.remove(file)
-                return None
+        if size > MAX_SIZE_MB:
+            print("⚠️ Skipped (too large)")
+            os.remove("video.mp4")
+            return None
 
-            return file
+        return "video.mp4"
 
     except Exception as e:
-        print(f"❌ Download error: {e}")
+        print("❌ Download error:", e)
         return None
 
-# ================= UPLOAD =================
-async def upload_video(file_path):
-    try:
-        print(f"📤 Uploading: {file_path}")
 
-        with open(file_path, "rb") as video:
-            await bot.send_video(
+# ================= UPLOAD =================
+async def upload_video(file):
+    try:
+        print("📤 Uploading...")
+
+        with open(file, "rb") as f:
+            await bot.send_document(
                 chat_id=CHANNEL_ID,
-                video=video,
-                caption="join telegram @link69_viral"
+                document=f,
+                caption=CAPTION
             )
 
+        os.remove(file)
         print("✅ Uploaded")
 
     except Exception as e:
-        print(f"❌ Upload error: {e}")
+        print("❌ Upload error:", e)
 
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
 
 # ================= LOOP =================
-async def loop():
-    print("🔁 LOOP STARTED")
-
+async def main_loop():
+    print("🚀 Bot Running...")
+    
     while True:
-        print("🔍 Checking website...")
+        try:
+            posts = get_posts()
+            print("🔗 POSTS:", len(posts))
 
-        posts = get_post_links()
+            for post in posts:
+                if post in downloaded:
+                    continue
 
-        for post_url in posts:
+                video_url = get_video_url(post)
 
-            # ✅ Skip already done
-            if post_url in downloaded_links:
-                continue
+                if not video_url:
+                    continue
 
-            video_url = extract_video_url(post_url)
+                file = download_video(video_url)
 
-            if not video_url:
-                continue
-
-            print(f"⬇️ Downloading: {video_url}")
-
-            file = download_video(video_url)
-
-            if file:
-                await upload_video(file)
-                downloaded_links.add(post_url)
+                if file:
+                    await upload_video(file)
+                    downloaded.add(post)
 
                 await asyncio.sleep(5)  # safe delay
 
-        print("⏱ Waiting 10 minutes...\n")
+        except Exception as e:
+            print("❌ Loop error:", e)
+
+        print("⏳ Sleeping 10 min...\n")
         await asyncio.sleep(CHECK_INTERVAL)
 
-# ================= MAIN =================
-async def main():
-    print("🚀 Bot 1 Running...")
-    await loop()
 
-# ================= START =================
-if __name__ == "__main__":
-    asyncio.run(main())
+# ================= RUN =================
+asyncio.run(main_loop())

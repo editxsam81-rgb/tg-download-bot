@@ -1,5 +1,5 @@
-import asyncio
 import os
+import asyncio
 import requests
 from bs4 import BeautifulSoup
 from telethon import TelegramClient
@@ -7,116 +7,107 @@ from telethon import TelegramClient
 # ================= CONFIG =================
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # -100xxxx
+CHANNEL = os.getenv("CHANNEL")  # username OR -100id
 
-SESSION = "session"  # session file name
+CAPTION = "join telegram @link69_viral"
 WEBSITE = "https://www.thekamababa.com/"
 
-# ==========================================
+# =========================================
 
-client = TelegramClient(SESSION, API_ID, API_HASH)
+if not API_ID or not API_HASH or not CHANNEL:
+    raise ValueError("❌ Missing API_ID / API_HASH / CHANNEL")
 
+client = TelegramClient("bot_session", API_ID, API_HASH)
 
-# ----------- FETCH POSTS -----------
+downloaded = set()
+
+# -------- GET POSTS --------
 def get_posts():
     try:
-        res = requests.get(WEBSITE, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+        r = requests.get(WEBSITE, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
 
         links = []
         for a in soup.find_all("a", href=True):
             href = a["href"]
 
-            if "/category/" in href:
-                continue
-            if "/tag/" in href:
-                continue
-            if "page" in href:
-                continue
+            if WEBSITE in href and "/category/" not in href and "/tag/" not in href:
+                if href.endswith("/"):
+                    links.append(href)
 
-            if href.startswith(WEBSITE) and href not in links:
-                links.append(href)
-
-        print(f"🔗 Found {len(links)} posts")
-        return links[:10]  # limit per loop
-
-    except Exception as e:
-        print("❌ Fetch error:", e)
+        return list(set(links))
+    except:
         return []
 
-
-# ----------- EXTRACT VIDEO -----------
+# -------- EXTRACT VIDEO --------
 def extract_video(post_url):
     try:
-        res = requests.get(post_url, timeout=10)
-        html = res.text
+        r = requests.get(post_url, timeout=10)
+        html = r.text
 
-        # simple extract mp4
-        import re
-        match = re.search(r'(https?://[^\s"]+\.mp4)', html)
+        # find mp4 directly
+        if ".mp4" in html:
+            start = html.find("https://")
+            end = html.find(".mp4") + 4
+            return html[start:end]
 
-        if match:
-            return match.group(1)
+    except:
+        return None
 
-    except Exception as e:
-        print("❌ Extract error:", e)
-
-    return None
-
-
-# ----------- DOWNLOAD -----------
+# -------- DOWNLOAD --------
 def download_video(url):
     try:
-        print("⬇️ Downloading...")
-        file_name = "video.mp4"
+        filename = "video.mp4"
 
         with requests.get(url, stream=True) as r:
-            with open(file_name, "wb") as f:
-                for chunk in r.iter_content(chunk_size=1024 * 1024):
+            with open(filename, "wb") as f:
+                for chunk in r.iter_content(1024 * 1024):
                     if chunk:
                         f.write(chunk)
 
-        return file_name
-
-    except Exception as e:
-        print("❌ Download error:", e)
+        return filename
+    except:
         return None
 
-
-# ----------- UPLOAD (NO LIMIT) -----------
-async def upload_video(file_path):
+# -------- UPLOAD --------
+async def upload_video(file):
     try:
-        print("📤 Uploading...")
+        size = os.path.getsize(file) / (1024 * 1024)
+
+        if size > 300:
+            print(f"⚠️ Skipped (too big {size:.1f}MB)")
+            return
 
         await client.send_file(
-            CHANNEL_ID,
-            file_path,
-            caption="🔥 Auto Uploaded",
+            CHANNEL,
+            file,
+            caption=CAPTION,
             supports_streaming=True
         )
 
-        os.remove(file_path)
         print("✅ Uploaded")
 
     except Exception as e:
         print("❌ Upload error:", e)
 
-
-# ----------- MAIN LOOP -----------
+# -------- MAIN LOOP --------
 async def main():
     await client.start()
-    print("🔥 USERBOT STARTED")
+
+    print("🔥 BOT STARTED...")
 
     while True:
-        print("🔁 LOOP STARTED")
-
+        print("🌐 Fetching website...")
         posts = get_posts()
+        print(f"🔗 Found {len(posts)} posts")
 
         for post in posts:
-            print(f"🔍 Processing: {post}")
+            if post in downloaded:
+                continue
+
+            print("🔍 Extracting:", post)
 
             video_url = extract_video(post)
-
             if not video_url:
                 continue
 
@@ -124,11 +115,17 @@ async def main():
 
             if file:
                 await upload_video(file)
+                downloaded.add(post)
+
+                try:
+                    os.remove(file)
+                except:
+                    pass
+
+                await asyncio.sleep(10)  # safe delay
 
         print("⏳ Sleeping 10 min...")
         await asyncio.sleep(600)
 
-
-# ----------- RUN -----------
-with client:
-    client.loop.run_until_complete(main())
+# -------- RUN --------
+asyncio.run(main())

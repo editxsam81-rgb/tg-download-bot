@@ -34,11 +34,19 @@ def get_video_links():
     for a in soup.find_all("a", href=True):
         href = a["href"]
 
-        if "thekamababa.com" in href:
+        # ✅ FILTER ONLY REAL POST LINKS
+        if (
+            "thekamababa.com/" in href
+            and not any(x in href for x in [
+                "category", "tag", "page", "filter",
+                "contact", "complaint", "tags"
+            ])
+            and href.count("/") > 3
+        ):
             links.append(href)
 
     links = list(set(links))
-    print("🔗 LINKS FOUND:", links)
+    print("🔗 FILTERED LINKS:", links)
 
     return links
 
@@ -112,8 +120,7 @@ async def main_loop():
 
                 print("✅ DONE:", link)
 
-                # SAFE DELAY
-                await asyncio.sleep(10)
+                await asyncio.sleep(10)  # SAFE DELAY
 
         except Exception as e:
             print("❌ LOOP ERROR:", e)

@@ -2,177 +2,158 @@ import os
 import asyncio
 import requests
 from bs4 import BeautifulSoup
-from pymongo import MongoClient
-from telegram import Bot
 import yt_dlp
+from telegram import Bot
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-STORAGE_CHANNEL = int(os.getenv("STORAGE_CHANNEL"))
-MONGO_URI = os.getenv("MONGO_URI")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # MUST be -100xxxxxxxxxx
 
-CAPTION = "join telegram @link69_viral"
-CHECK_INTERVAL = 600
-
-# ================= DB =================
-client = MongoClient(MONGO_URI)
-db = client["scraperbot"]
-links_db = db.links
+CHECK_INTERVAL = 600  # 10 min
+MAX_SIZE = 50 * 1024 * 1024  # 50MB
 
 bot = Bot(token=BOT_TOKEN)
 
-# ================= GET POSTS =================
+# ================= MEMORY =================
+downloaded_links = set()
+
+# ================= SCRAPER =================
 def get_post_links():
     url = "https://www.thekamababa.com/"
-    print("🌐 Fetching:", url)
-
-    res = requests.get(url, timeout=15)
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    links = []
-
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-
-        if (
-            "thekamababa.com/" in href
-            and not any(x in href for x in [
-                "category", "tag", "page", "filter",
-                "contact", "complaint", "tags"
-            ])
-            and href.count("/") > 3
-        ):
-            links.append(href)
-
-    links = list(set(links))
-    print("🔗 POSTS:", links)
-    return links
-
-
-# ================= EXTRACT REAL VIDEO =================
-def extract_video_url(page_url):
-    print("🔍 Extracting video from:", page_url)
+    print(f"🌐 Fetching: {url}")
 
     try:
-        res = requests.get(page_url, timeout=15)
+        res = requests.get(url, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # ✅ check video tag
-        video = soup.find("video")
-        if video and video.get("src"):
-            return video["src"]
+        links = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
 
-        # ✅ check source
-        source = soup.find("source")
-        if source and source.get("src"):
-            return source["src"]
+            # ✅ Only valid post links
+            if "thekamababa.com" in href and href.count("/") > 3:
+                if "/category/" not in href and "/tag/" not in href:
+                    links.append(href)
 
-        # ✅ check iframe BUT FILTER ADS
-        for iframe in soup.find_all("iframe"):
-            src = iframe.get("src")
+        links = list(set(links))  # remove duplicates
+        print(f"🔗 POSTS: {links[:20]}")
 
-            if not src:
-                continue
-
-            # 🚫 SKIP ADS / TRACKERS
-            if any(x in src for x in [
-                "ads", "doubleclick", "blazingserver",
-                "delivery", "banner"
-            ]):
-                continue
-
-            # ✅ probable real video host
-            return src
+        return links
 
     except Exception as e:
-        print("❌ Extract error:", e)
+        print(f"❌ Fetch error: {e}")
+        return []
 
-    return None
+# ================= EXTRACT VIDEO =================
+def extract_video_url(post_url):
+    try:
+        print(f"🔍 Extracting video from: {post_url}")
 
+        res = requests.get(post_url, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        video = soup.find("video")
+        if video:
+            source = video.find("source")
+            if source and source.get("src"):
+                return source["src"]
+
+        return None
+
+    except Exception as e:
+        print(f"❌ Extract error: {e}")
+        return None
 
 # ================= DOWNLOAD =================
 def download_video(url):
-    print("⬇️ Downloading:", url)
-
     ydl_opts = {
         "outtmpl": "video.%(ext)s",
         "quiet": True,
-        "format": "best",
-        "noplaylist": True
+        "format": "mp4/best",
+        "noplaylist": True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            print("✅ Downloaded:", filename)
-            return filename
+            file = ydl.prepare_filename(info)
+
+            if not os.path.exists(file):
+                return None
+
+            size = os.path.getsize(file)
+
+            # ❌ Skip large files
+            if size > MAX_SIZE:
+                print("❌ Skipped (too large)")
+                os.remove(file)
+                return None
+
+            return file
+
     except Exception as e:
-        print("❌ Download error:", e)
+        print(f"❌ Download error: {e}")
         return None
 
-
 # ================= UPLOAD =================
-async def upload(file_path):
-    print("📤 Uploading:", file_path)
-
+async def upload_video(file_path):
     try:
-        with open(file_path, "rb") as f:
-            await bot.send_document(
-                chat_id=STORAGE_CHANNEL,
-                document=f,
-                caption=CAPTION
+        print(f"📤 Uploading: {file_path}")
+
+        with open(file_path, "rb") as video:
+            await bot.send_video(
+                chat_id=CHANNEL_ID,
+                video=video,
+                caption="join telegram @link69_viral"
             )
+
         print("✅ Uploaded")
+
     except Exception as e:
-        print("❌ Upload error:", e)
+        print(f"❌ Upload error: {e}")
 
-    try:
-        os.remove(file_path)
-    except:
-        pass
-
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 # ================= LOOP =================
-async def main_loop():
+async def loop():
+    print("🔁 LOOP STARTED")
+
     while True:
-        print("🔁 LOOP STARTED")
+        print("🔍 Checking website...")
 
-        try:
-            posts = get_post_links()
+        posts = get_post_links()
 
-            for post in posts:
+        for post_url in posts:
 
-                if links_db.find_one({"url": post}):
-                    continue
+            # ✅ Skip already done
+            if post_url in downloaded_links:
+                continue
 
-                video_url = extract_video_url(post)
+            video_url = extract_video_url(post_url)
 
-                if not video_url:
-                    print("❌ No video found")
-                    continue
+            if not video_url:
+                continue
 
-                file = download_video(video_url)
+            print(f"⬇️ Downloading: {video_url}")
 
-                if not file:
-                    continue
+            file = download_video(video_url)
 
-                await upload(file)
+            if file:
+                await upload_video(file)
+                downloaded_links.add(post_url)
 
-                links_db.insert_one({"url": post})
+                await asyncio.sleep(5)  # safe delay
 
-                print("✅ DONE:", post)
-
-                await asyncio.sleep(10)
-
-        except Exception as e:
-            print("❌ LOOP ERROR:", e)
-
-        print("⏱ Waiting 10 min...\n")
+        print("⏱ Waiting 10 minutes...\n")
         await asyncio.sleep(CHECK_INTERVAL)
 
-
-# ================= RUN =================
-if __name__ == "__main__":
+# ================= MAIN =================
+async def main():
     print("🚀 Bot 1 Running...")
-    asyncio.run(main_loop())
+    await loop()
+
+# ================= START =================
+if __name__ == "__main__":
+    asyncio.run(main())

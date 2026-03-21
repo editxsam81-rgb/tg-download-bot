@@ -9,7 +9,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 def download_video(url):
     ydl_opts = {
         'outtmpl': 'video.%(ext)s',
-        'format': 'best[filesize<50M]/best',
+        'format': 'best',
         'noplaylist': True
     }
 
@@ -21,24 +21,28 @@ def download_video(url):
         print("Download error:", e)
         return None
 
-# handle message
+# handler
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
+    if not update.message or not update.message.text:
+        return  # ignore non-text safely
+
+    url = update.message.text.strip()
+
     await update.message.reply_text("⬇️ Downloading...")
 
     file = download_video(url)
 
     if file and os.path.exists(file):
-        await update.message.reply_text("📤 Uploading...")
+        await update.message.reply_text("📤 Sending file...")
         try:
-            await update.message.reply_video(video=open(file, "rb"))
+            await update.message.reply_document(document=open(file, "rb"))
         except Exception as e:
-            await update.message.reply_text(f"❌ Upload error: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
         os.remove(file)
     else:
-        await update.message.reply_text("❌ Failed to download")
+        await update.message.reply_text("❌ Download failed")
 
-# run bot
+# run
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 

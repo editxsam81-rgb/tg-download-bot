@@ -1,0 +1,5 @@
+yt-dlp
+requests
+beautifulsoup4
+pymongo
+python-telegram-bot==20.3

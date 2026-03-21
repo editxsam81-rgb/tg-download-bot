@@ -131,36 +131,20 @@ async def upload_video(file):
 
 # ================= LOOP =================
 
-async def main_loop():
-    print("🔁 LOOP STARTED")
+for post in posts:
+    print(f"🔍 Extracting: {post}")
 
-    while True:
-        try:
-            posts = get_posts()
-            print(f"🔗 Found {len(posts)} posts")
+    video_url = extract_video(post)
 
-            for post in posts:
-                if post in downloaded:
-                    continue
+    if not video_url:
+        continue
 
-                video_url = get_video_url(post)
+    print(f"⬇️ Downloading: {video_url}")
+    file = download_video(video_url)
 
-                if not video_url:
-                    continue
-
-                file = download_video(video_url)
-
-                if file:
-                    await upload_video(file)
-                    downloaded.add(post)
-
-                await asyncio.sleep(5)
-
-        except Exception as e:
-            print("❌ Loop error:", e)
-
-        print("⏳ Sleeping 10 min...\n")
-        await asyncio.sleep(CHECK_INTERVAL)
+    if file:
+        print("📤 Uploading...")
+        await upload_video(bot, file)
 
 # ================= RUN =================
 

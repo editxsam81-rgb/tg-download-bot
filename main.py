@@ -1,151 +1,134 @@
-import os
 import asyncio
+import os
 import requests
 from bs4 import BeautifulSoup
-from telegram import Bot
-import yt_dlp
+from telethon import TelegramClient
 
 # ================= CONFIG =================
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # -100xxxx
 
-print("🔥 BOT STARTED...")
+SESSION = "session"  # session file name
+WEBSITE = "https://www.thekamababa.com/"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  
-# 👉 REPLACE in Railway ENV
+# ==========================================
 
-CHANNEL_ID = os.getenv("CHANNEL_ID")  
-# 👉 REPLACE with your STORAGE CHANNEL ID (-100xxxxxxxxxx)
+client = TelegramClient(SESSION, API_ID, API_HASH)
 
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN missing")
 
-if not CHANNEL_ID:
-    raise ValueError("❌ CHANNEL_ID missing")
-
-CHANNEL_ID = int(CHANNEL_ID)
-
-bot = Bot(token=BOT_TOKEN)
-
-CAPTION = "join telegram @link69_viral"  
-# 👉 EDIT if needed
-
-URL = "https://www.thekamababa.com/"  
-# 👉 SOURCE WEBSITE
-
-CHECK_INTERVAL = 600  # 10 min
-MAX_SIZE_MB = 49
-
-downloaded = set()
-
-# ================= FETCH POSTS =================
-
+# ----------- FETCH POSTS -----------
 def get_posts():
-    print("🌐 Fetching website...")
-    res = requests.get(URL, timeout=15)
-    soup = BeautifulSoup(res.text, "html.parser")
-
-    links = []
-
-    for a in soup.find_all("a", href=True):
-        link = a["href"]
-
-        if (
-            "/category/" not in link and
-            "/tag/" not in link and
-            "page/" not in link and
-            "?" not in link and
-            link.endswith("/")
-        ):
-            if "thekamababa.com" in link:
-                links.append(link)
-
-    return list(set(links))
-
-# ================= EXTRACT VIDEO =================
-
-def get_video_url(post_url):
     try:
-        print(f"🔍 Extracting: {post_url}")
-        res = requests.get(post_url, timeout=15)
+        res = requests.get(WEBSITE, timeout=10)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        video = soup.find("video")
+        links = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
 
-        if video:
-            source = video.find("source")
-            if source and source.get("src"):
-                return source["src"]
+            if "/category/" in href:
+                continue
+            if "/tag/" in href:
+                continue
+            if "page" in href:
+                continue
 
-        return None
+            if href.startswith(WEBSITE) and href not in links:
+                links.append(href)
+
+        print(f"🔗 Found {len(links)} posts")
+        return links[:10]  # limit per loop
+
+    except Exception as e:
+        print("❌ Fetch error:", e)
+        return []
+
+
+# ----------- EXTRACT VIDEO -----------
+def extract_video(post_url):
+    try:
+        res = requests.get(post_url, timeout=10)
+        html = res.text
+
+        # simple extract mp4
+        import re
+        match = re.search(r'(https?://[^\s"]+\.mp4)', html)
+
+        if match:
+            return match.group(1)
 
     except Exception as e:
         print("❌ Extract error:", e)
-        return None
 
-# ================= DOWNLOAD =================
+    return None
 
+
+# ----------- DOWNLOAD -----------
 def download_video(url):
     try:
-        print(f"⬇️ Downloading: {url}")
+        print("⬇️ Downloading...")
+        file_name = "video.mp4"
 
-        ydl_opts = {
-            "outtmpl": "video.mp4",
-            "quiet": True,
-            "noplaylist": True,
-        }
+        with requests.get(url, stream=True) as r:
+            with open(file_name, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-        size = os.path.getsize("video.mp4") / (1024 * 1024)
-        print(f"📦 Size: {size:.2f} MB")
-
-        if size > MAX_SIZE_MB:
-            print("⚠️ Skipped (too large)")
-            os.remove("video.mp4")
-            return None
-
-        return "video.mp4"
+        return file_name
 
     except Exception as e:
         print("❌ Download error:", e)
         return None
 
-# ================= UPLOAD =================
 
-async def upload_video(file):
+# ----------- UPLOAD (NO LIMIT) -----------
+async def upload_video(file_path):
     try:
         print("📤 Uploading...")
 
-        with open(file, "rb") as f:
-            await bot.send_document(
-                chat_id=CHANNEL_ID,
-                document=f,
-                caption=CAPTION
-            )
+        await client.send_file(
+            CHANNEL_ID,
+            file_path,
+            caption="🔥 Auto Uploaded",
+            supports_streaming=True
+        )
 
-        os.remove(file)
+        os.remove(file_path)
         print("✅ Uploaded")
 
     except Exception as e:
         print("❌ Upload error:", e)
 
-# ================= LOOP =================
 
-for post in posts:
-    print(f"🔍 Extracting: {post}")
+# ----------- MAIN LOOP -----------
+async def main():
+    await client.start()
+    print("🔥 USERBOT STARTED")
 
-    video_url = extract_video(post)
+    while True:
+        print("🔁 LOOP STARTED")
 
-    if not video_url:
-        continue
+        posts = get_posts()
 
-    print(f"⬇️ Downloading: {video_url}")
-    file = download_video(video_url)
+        for post in posts:
+            print(f"🔍 Processing: {post}")
 
-    if file:
-        print("📤 Uploading...")
-        await upload_video(bot, file)
+            video_url = extract_video(post)
 
-# ================= RUN =================
+            if not video_url:
+                continue
 
-asyncio.run(main_loop())
+            file = download_video(video_url)
+
+            if file:
+                await upload_video(file)
+
+        print("⏳ Sleeping 10 min...")
+        await asyncio.sleep(600)
+
+
+# ----------- RUN -----------
+with client:
+    client.loop.run_until_complete(main())

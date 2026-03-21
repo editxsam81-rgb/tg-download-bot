@@ -6,32 +6,38 @@ from telegram import Bot
 import yt_dlp
 
 # ================= CONFIG =================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# SAFE: no crash if missing
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+print("🔥 BOT STARTED...")
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")  
+# 👉 REPLACE in Railway ENV
+
+CHANNEL_ID = os.getenv("CHANNEL_ID")  
+# 👉 REPLACE with your STORAGE CHANNEL ID (-100xxxxxxxxxx)
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN missing")
 
 if not CHANNEL_ID:
-    raise ValueError("❌ CHANNEL_ID missing (set in Railway env)")
+    raise ValueError("❌ CHANNEL_ID missing")
 
 CHANNEL_ID = int(CHANNEL_ID)
 
-CAPTION = "Join Telegram @link69_viral"
-
 bot = Bot(token=BOT_TOKEN)
 
-# ================= SETTINGS =================
-URL = "https://www.thekamababa.com/"
-CHECK_INTERVAL = 600   # 10 min
-MAX_SIZE_MB = 49       # Telegram safe limit
-DOWNLOAD_TIMEOUT = 120
+CAPTION = "join telegram @link69_viral"  
+# 👉 EDIT if needed
+
+URL = "https://www.thekamababa.com/"  
+# 👉 SOURCE WEBSITE
+
+CHECK_INTERVAL = 600  # 10 min
+MAX_SIZE_MB = 49
 
 downloaded = set()
 
 # ================= FETCH POSTS =================
+
 def get_posts():
     print("🌐 Fetching website...")
     res = requests.get(URL, timeout=15)
@@ -52,11 +58,10 @@ def get_posts():
             if "thekamababa.com" in link:
                 links.append(link)
 
-    # remove duplicates
     return list(set(links))
 
-
 # ================= EXTRACT VIDEO =================
+
 def get_video_url(post_url):
     try:
         print(f"🔍 Extracting: {post_url}")
@@ -76,8 +81,8 @@ def get_video_url(post_url):
         print("❌ Extract error:", e)
         return None
 
-
 # ================= DOWNLOAD =================
+
 def download_video(url):
     try:
         print(f"⬇️ Downloading: {url}")
@@ -92,7 +97,6 @@ def download_video(url):
             ydl.download([url])
 
         size = os.path.getsize("video.mp4") / (1024 * 1024)
-
         print(f"📦 Size: {size:.2f} MB")
 
         if size > MAX_SIZE_MB:
@@ -106,8 +110,8 @@ def download_video(url):
         print("❌ Download error:", e)
         return None
 
-
 # ================= UPLOAD =================
+
 async def upload_video(file):
     try:
         print("📤 Uploading...")
@@ -125,15 +129,15 @@ async def upload_video(file):
     except Exception as e:
         print("❌ Upload error:", e)
 
-
 # ================= LOOP =================
+
 async def main_loop():
-    print("🚀 Bot Running...")
-    
+    print("🔁 LOOP STARTED")
+
     while True:
         try:
             posts = get_posts()
-            print("🔗 POSTS:", len(posts))
+            print(f"🔗 Found {len(posts)} posts")
 
             for post in posts:
                 if post in downloaded:
@@ -150,7 +154,7 @@ async def main_loop():
                     await upload_video(file)
                     downloaded.add(post)
 
-                await asyncio.sleep(5)  # safe delay
+                await asyncio.sleep(5)
 
         except Exception as e:
             print("❌ Loop error:", e)
@@ -158,6 +162,6 @@ async def main_loop():
         print("⏳ Sleeping 10 min...\n")
         await asyncio.sleep(CHECK_INTERVAL)
 
-
 # ================= RUN =================
+
 asyncio.run(main_loop())

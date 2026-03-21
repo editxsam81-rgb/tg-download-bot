@@ -57,20 +57,32 @@ def extract_video_url(page_url):
         res = requests.get(page_url, timeout=15)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # 🔥 1. Check video tag
+        # ✅ check video tag
         video = soup.find("video")
         if video and video.get("src"):
             return video["src"]
 
-        # 🔥 2. Check source tag
+        # ✅ check source
         source = soup.find("source")
         if source and source.get("src"):
             return source["src"]
 
-        # 🔥 3. Check iframe
-        iframe = soup.find("iframe")
-        if iframe and iframe.get("src"):
-            return iframe["src"]
+        # ✅ check iframe BUT FILTER ADS
+        for iframe in soup.find_all("iframe"):
+            src = iframe.get("src")
+
+            if not src:
+                continue
+
+            # 🚫 SKIP ADS / TRACKERS
+            if any(x in src for x in [
+                "ads", "doubleclick", "blazingserver",
+                "delivery", "banner"
+            ]):
+                continue
+
+            # ✅ probable real video host
+            return src
 
     except Exception as e:
         print("❌ Extract error:", e)

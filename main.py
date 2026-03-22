@@ -1,50 +1,58 @@
+import asyncio
+import requests
+import re
 import os
-import yt_dlp
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telethon import TelegramClient
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+api_id = int(os.getenv("API_ID"))
+api_hash = os.getenv("API_HASH")
+channel = os.getenv("CHANNEL")
 
-# download function
-def download_video(url):
-    ydl_opts = {
-        'outtmpl': 'video.%(ext)s',
-        'format': 'best',
-        'noplaylist': True
-    }
+client = TelegramClient("session", api_id, api_hash)
 
+def extract_video(url):
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        return "video.mp4"
-    except Exception as e:
-        print("Download error:", e)
+        r = requests.get(url)
+        match = re.search(r'https?://[^"]+\.mp4', r.text)
+        return match.group(0) if match else None
+    except:
         return None
 
-# handler
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return  # ignore non-text safely
+def download(url):
+    filename = "video.mp4"
+    with requests.get(url, stream=True) as r:
+        with open(filename, "wb") as f:
+            for chunk in r.iter_content(1024*1024):
+                if chunk:
+                    f.write(chunk)
+    return filename
 
-    url = update.message.text.strip()
+async def main():
+    print("🔥 USERBOT RUNNING")
 
-    await update.message.reply_text("⬇️ Downloading...")
-
-    file = download_video(url)
-
-    if file and os.path.exists(file):
-        await update.message.reply_text("📤 Sending file...")
+    while True:
         try:
-            await update.message.reply_document(document=open(file, "rb"))
+            r = requests.get("https://www.desitales2.com/videos/latest-updates/")
+            links = re.findall(r'href="(https://www.desitales2.com/[^"]+)"', r.text)
+
+            for link in links[:5]:
+                print("🔍", link)
+
+                video = extract_video(link)
+                if not video:
+                    continue
+
+                file = download(video)
+
+                print("📤 Uploading...")
+                await client.send_file(channel, file)
+
+                os.remove(file)
+
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
-        os.remove(file)
-    else:
-        await update.message.reply_text("❌ Download failed")
+            print("❌ Error:", e)
 
-# run
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+        await asyncio.sleep(600)
 
-print("🚀 Bot Running...")
-app.run_polling()
+with client:
+    client.loop.run_until_complete(main())

@@ -8,13 +8,15 @@ api_hash = os.getenv("API_HASH")
 
 client = TelegramClient("session", api_id, api_hash)
 
-# ===== DOWNLOAD FUNCTION =====
+# ===== DOWNLOAD FUNCTION WITH COOKIES =====
 def download_video(url):
     try:
         ydl_opts = {
             'outtmpl': 'video.%(ext)s',
             'format': 'best',
-            'quiet': True
+            'cookiefile': 'cookies.txt',  # 🔥 IMPORTANT
+            'quiet': False,
+            'nocheckcertificate': True
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -33,13 +35,14 @@ def download_video(url):
 async def handler(event):
     text = event.raw_text
 
+    # Check if message contains a link
     if "http" in text:
         await event.reply("⬇️ Downloading...")
 
         file = download_video(text)
 
         if not file:
-            await event.reply("❌ Failed to download")
+            await event.reply("❌ Failed to download (maybe cookies expired)")
             return
 
         await event.reply("📤 Uploading...")
@@ -50,7 +53,7 @@ async def handler(event):
 
 
 # ===== START =====
-print("🔥 BOT RUNNING (Send link in Telegram)")
+print("🔥 BOT RUNNING (COOKIE MODE)")
 
 client.start()
 client.run_until_disconnected()

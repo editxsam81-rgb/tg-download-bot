@@ -58,16 +58,19 @@ async def main():
 
     while True:
         try:
-            r = requests.get(
-                "https://www.desitales2.com/videos/latest-updates/",
-                headers=HEADERS
-            )
+        r = requests.get(
+    "https://www.desitales2.com/videos/latest-updates/",
+    headers=HEADERS
+)
 
-            links = re.findall(
-                r'href="(https://www.desitales2.com/[^"]+)"',
-                r.text
-            )
+print("🌐 Page loaded:", r.status_code)
 
+links = re.findall(
+    r'href="(https://www.desitales2.com/[^"]+)"',
+    r.text
+)
+
+print("🔗 Total links found:", len(links))
             for link in links[:3]:  # limit for safety
                 print("🔍 Checking:", link)
 

@@ -1,111 +1,60 @@
 import asyncio
-import requests
-import re
 import os
 from telethon import TelegramClient
+import yt_dlp
 
-# ====== CONFIG ======
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 
-# 👉 For testing (no channel needed)
-channel = "me"
+channel = "me"  # change later if needed
 
 client = TelegramClient("session", api_id, api_hash)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-# ====== EXTRACT VIDEO ======
-def extract_video(url):
+# ===== DOWNLOAD USING YT-DLP =====
+def download_video(url):
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        ydl_opts = {
+            'outtmpl': 'video.%(ext)s',
+            'format': 'best',
+            'quiet': True
+        }
 
-        patterns = [
-            r'https?://[^"]+\.mp4',
-            r'https?://[^"]+\.m3u8'
-        ]
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-        for pattern in patterns:
-            match = re.search(pattern, r.text)
-            if match:
-                return match.group(0)
-
-        return None
+        return "video.mp4"
 
     except Exception as e:
-        print("❌ Extract error:", e)
+        print("❌ yt-dlp error:", e)
         return None
 
 
-# ====== DOWNLOAD VIDEO ======
-def download(url):
-    try:
-        filename = "video.mp4"
-
-        with requests.get(url, headers=HEADERS, stream=True, timeout=30) as r:
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-
-        return filename
-
-    except Exception as e:
-        print("❌ Download error:", e)
-        return None
-
-
-# ====== MAIN LOOP ======
 async def main():
-    print("🔥 USERBOT RUNNING")
+    print("🔥 USERBOT RUNNING (yt-dlp mode)")
+
+    # 👉 TEST WITH ONE LINK FIRST
+    test_link = "https://www.desitales2.com/videos/latest-updates/"
 
     while True:
         try:
-            print("🌐 Fetching website...")
+            print("🔍 Trying download...")
 
-            r = requests.get(
-                "https://www.desitales2.com/videos/latest-updates/",
-                headers=HEADERS
-            )
+            file = download_video(test_link)
 
-            print("🌐 Status:", r.status_code)
+            if not file:
+                continue
 
-            links = re.findall(
-                r'href="(https://www.desitales2.com/[^"]+)"',
-                r.text
-            )
+            print("📤 Uploading...")
+            await client.send_file(channel, file)
 
-            print("🔗 Links found:", len(links))
-
-            for link in links[:3]:
-                print("🔍 Checking:", link)
-
-                video = extract_video(link)
-                print("🎥 Found:", video)
-
-                if not video:
-                    continue
-
-                file = download(video)
-
-                if not file:
-                    continue
-
-                print("📤 Uploading to Telegram...")
-                await client.send_file(channel, file)
-
-                os.remove(file)
-                print("✅ Done\n")
+            os.remove(file)
+            print("✅ Done")
 
         except Exception as e:
-            print("❌ Main error:", e)
+            print("❌ Error:", e)
 
-        print("⏳ Waiting 10 minutes...\n")
         await asyncio.sleep(600)
 
 
-# ====== START CLIENT ======
 with client:
     client.loop.run_until_complete(main())

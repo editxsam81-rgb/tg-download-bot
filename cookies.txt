@@ -1,0 +1,8 @@
+# Netscape HTTP Cookie File
+# http://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file!  Do not edit.
+
+.www.desitales2.com	TRUE	/	FALSE	1774791798	kt_tcookie	1
+.desitales2.com	TRUE	/	FALSE	1774273398	kt_is_visited	1
+.desitales2.com	TRUE	/	TRUE	1774248316	kt_acctoken	MjAyLjE2OC44NS42MywxMDMuMTk5LjE4MC45NiwyNDA5OjQwOGE6MWU0ODpiMjdiOmVjMGE6Y2I5Yzo0ZjNlOjMzZmYsMTQ0LjE2LjEuMTk1LDIwMi4xNDEuNjUuNjI
+.desitales2.com	TRUE	/	FALSE	0	PHPSESSID	2fk5701okbo23isuc4iguo84aj

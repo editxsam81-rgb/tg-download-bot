@@ -1,16 +1,14 @@
-import asyncio
 import os
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 import yt_dlp
 
+# ===== CONFIG =====
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
 
-channel = "me"  # change later if needed
-
 client = TelegramClient("session", api_id, api_hash)
 
-# ===== DOWNLOAD USING YT-DLP =====
+# ===== DOWNLOAD FUNCTION =====
 def download_video(url):
     try:
         ydl_opts = {
@@ -20,41 +18,39 @@ def download_video(url):
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
 
-        return "video.mp4"
+        return filename
 
     except Exception as e:
-        print("❌ yt-dlp error:", e)
+        print("❌ Download error:", e)
         return None
 
 
-async def main():
-    print("🔥 USERBOT RUNNING (yt-dlp mode)")
+# ===== MESSAGE HANDLER =====
+@client.on(events.NewMessage)
+async def handler(event):
+    text = event.raw_text
 
-    # 👉 TEST WITH ONE LINK FIRST
-    test_link = "https://www.desitales2.com/videos/latest-updates/"
+    if "http" in text:
+        await event.reply("⬇️ Downloading...")
 
-    while True:
-        try:
-            print("🔍 Trying download...")
+        file = download_video(text)
 
-            file = download_video(test_link)
+        if not file:
+            await event.reply("❌ Failed to download")
+            return
 
-            if not file:
-                continue
+        await event.reply("📤 Uploading...")
+        await client.send_file(event.chat_id, file)
 
-            print("📤 Uploading...")
-            await client.send_file(channel, file)
-
-            os.remove(file)
-            print("✅ Done")
-
-        except Exception as e:
-            print("❌ Error:", e)
-
-        await asyncio.sleep(600)
+        os.remove(file)
+        await event.reply("✅ Done")
 
 
-with client:
-    client.loop.run_until_complete(main())
+# ===== START =====
+print("🔥 BOT RUNNING (Send link in Telegram)")
+
+client.start()
+client.run_until_disconnected()
